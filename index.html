@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>duckyPad Configurator v4.0.2 (Web Edition)</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Dashboard Frame -->
+    <header class="panel-frame dashboard-bar">
+      <div class="dashboard-left">
+        <button id="btnConnect" class="btn-primary" title="Connect to duckyPad, open SD card folder, or load a ZIP backup">
+          Connect / Open
+        </button>
+        <span id="statusLabel" class="status-pill">&lt;---- Press Connect to begin</span>
+      </div>
+      <div class="dashboard-right">
+        <label style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted);">
+          Model:
+          <select id="modelSelect" class="model-select" title="Target duckyPad hardware model">
+            <option value="24">duckyPad Pro (2024)</option>
+            <option value="20">OG duckyPad (2020)</option>
+          </select>
+        </label>
+        <button id="btnSave" class="btn-primary" disabled title="Compile all DuckyScript files to .dsb bytecode, save backup, and sync/download">
+          Save
+        </button>
+        <button id="btnExportSdZip" disabled title="Download complete SD card configuration with compiled .dsb files as a ZIP archive">
+          Export SD .zip
+        </button>
+        <button id="btnBackups" title="View, restore, or download automatic browser backups">
+          Backups
+        </button>
+        <button id="btnEditHeaders" title="Edit User Header (USE_UH) and duckyPad Standard Library (USE_STDLIB)">
+          Edit Headers
+        </button>
+        <button id="btnThemeToggle" title="Toggle Dark / Light Mode">
+          Theme
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace 4-Column Layout -->
+    <main class="workspace-grid">
+      <!-- Column 1: Profiles -->
+      <section class="panel-frame profiles-panel">
+        <div class="panel-title">
+          <span>Profiles</span>
+          <span class="hint-text">Max 64</span>
+        </div>
+
+        <div class="profile-list-wrapper">
+          <div class="profile-order-btns">
+            <button id="btnProfileUp" disabled title="Move profile up">↑</button>
+            <button id="btnProfileRemove" class="btn-danger" disabled title="Delete selected profile">✕</button>
+            <button id="btnProfileDown" disabled title="Move profile down">↓</button>
+          </div>
+          <ul id="profileListbox" class="profile-listbox"></ul>
+        </div>
+
+        <div class="profile-actions-grid">
+          <button id="btnProfileNew" disabled>New</button>
+          <button id="btnProfileDupe" disabled>Duplicate</button>
+          <button id="btnProfileRename" disabled>Rename</button>
+          <button id="btnProfileImport" disabled title="Import a duckyPad_Profile_*.zip file">Import</button>
+          <button id="btnProfileExport" disabled title="Export profile(s) to .zip">Export</button>
+        </div>
+
+        <div class="profile-settings">
+          <div class="setting-row">
+            <span>Background Color:</span>
+            <input type="color" id="inputBgColor" class="color-swatch-input" value="#5416b4" disabled />
+          </div>
+
+          <div class="setting-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkKdColor" disabled />
+              <span>Custom Key-down Color</span>
+            </label>
+            <input type="color" id="inputKdColor" class="color-swatch-input" value="#ee82ee" disabled />
+          </div>
+
+          <div class="setting-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkDimUnused" disabled />
+              <span>Dim Unused Keys</span>
+            </label>
+          </div>
+
+          <div class="setting-row" style="flex-wrap: wrap;">
+            <span>Increase RE Sensitivity:</span>
+            <div style="display: inline-flex; gap: 10px;">
+              <label class="checkbox-label">
+                <input type="checkbox" id="chkUpperHs" disabled />
+                <span>Upper</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="chkLowerHs" disabled />
+                <span>Lower</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Column 2: Onboard Switches & Key Config -->
+      <div class="center-column">
+        <section class="panel-frame switches-panel">
+          <div class="panel-title">
+            <span>Onboard Switches</span>
+          </div>
+          <div class="switches-toolbar">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkRotateKeys" disabled />
+              <span>Rotate</span>
+            </label>
+            <span class="hint-text">Click to edit, drag to rearrange</span>
+          </div>
+          <div id="obswGrid" class="obsw-grid portrait"></div>
+        </section>
+
+        <section class="panel-frame key-config-panel">
+          <div class="panel-title">
+            <span>Key Config</span>
+          </div>
+          <div class="key-name-row">
+            <div id="keyLimitLabel" class="key-limit-label">Key Name:<br/>5 Letters/2 Lines</div>
+            <textarea id="keyNameTextarea" class="key-name-textarea" rows="2" placeholder="Line 1&#10;Line 2" disabled></textarea>
+            <button id="btnKeyRemove" class="btn-danger" style="height: 44px; flex: 1;" disabled>
+              Remove<br/>Key
+            </button>
+          </div>
+
+          <div class="key-flags-col">
+            <div class="setting-row">
+              <label class="checkbox-label">
+                <input type="checkbox" id="chkCustomKeyColor" disabled />
+                <span>Custom Key Color</span>
+              </label>
+              <input type="color" id="inputKeyColor" class="color-swatch-input" value="#ee82ee" disabled />
+            </div>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkAllowAbort" disabled />
+              <span>Press Any Key to Abort</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkDontRepeat" disabled />
+              <span>Disable Auto-Repeat</span>
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <!-- Column 3: Rotary Encoders & Expansion Modules -->
+      <div class="aux-column">
+        <section class="panel-frame">
+          <div class="panel-title">
+            <span>Rotary Encoders</span>
+          </div>
+          <div id="reActiveContainer">
+            <div id="reListContainer" class="re-list"></div>
+          </div>
+          <div id="reTeaseContainer" class="re-tease-box hidden">
+            <span>None on this duckyPad :(</span>
+            <a href="https://dekunukem.github.io/duckyPad-Pro/README.html" target="_blank" rel="noopener">
+              Check out duckyPad Pro
+            </a>
+          </div>
+        </section>
+
+        <section class="panel-frame exp-panel">
+          <div class="panel-title">
+            <span>Expansion Modules</span>
+          </div>
+          <div class="exp-pager">
+            <button id="btnExpMinus" title="Previous expansion module">-</button>
+            <span id="expModuleLabel" style="font-weight: 600;">Module 1</span>
+            <button id="btnExpPlus" title="Next expansion module">+</button>
+          </div>
+          <div id="expListContainer" class="exp-list"></div>
+        </section>
+      </div>
+
+      <!-- Column 4: Scripts -->
+      <div class="scripts-column">
+        <section class="panel-frame scripts-panel">
+          <div class="panel-title">
+            <span>Scripts</span>
+            <a href="https://dekunukem.github.io/duckyPad-Pro/doc/duckyscript_info.html" target="_blank" rel="noopener">
+              duckyScript Instructions ↗
+            </a>
+          </div>
+
+          <div id="scriptsActiveWrapper" class="scripts-active-wrapper hidden">
+            <div class="script-top-row">
+              <div class="script-mode-radios">
+                <label class="checkbox-label">
+                  <input type="radio" name="scriptPhase" id="radioOnPress" value="0" checked />
+                  <span>On Press</span>
+                </label>
+                <label class="checkbox-label" id="labelOnRelease">
+                  <input type="radio" name="scriptPhase" id="radioOnRelease" value="1" />
+                  <span>On Release</span>
+                </label>
+              </div>
+              <button id="btnInspectBytecode" title="View compiled DSVM2 assembly instructions and binary output">
+                Inspect Bytecode
+              </button>
+            </div>
+
+            <div class="code-editor-container">
+              <div id="lineNumbersGutter" class="line-numbers-gutter">
+                <div class="gutter-line">1</div>
+              </div>
+              <div class="editor-stack">
+                <div id="editorBackdrop" class="editor-backdrop"></div>
+                <textarea
+                  id="scriptTextarea"
+                  class="script-textarea"
+                  spellcheck="false"
+                  autocapitalize="off"
+                  autocomplete="off"
+                  placeholder="// Enter DuckyScript 3 commands here..."
+                ></textarea>
+              </div>
+            </div>
+
+            <div class="syntax-status-bar">
+              <span id="syntaxStatusText" class="syntax-ok">Code seems OK...</span>
+              <span id="bytecodeSizeBadge" class="hint-text">0 bytes</span>
+            </div>
+          </div>
+
+          <div id="scriptsEmptyWrapper" class="empty-script-placeholder">
+            <div style="font-size: 14px; font-weight: 600;">&lt;-- Select a key</div>
+            <p class="hint-text">Click any switch, rotary encoder action, or expansion channel to view or edit its script. Type a key name in "Key Config" to initialize an unassigned key.</p>
+            <button id="btnCreateEmptyKey" class="btn-primary hidden">Create Key on Selected Slot</button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Bottom Footer: Resources & Updates -->
+    <footer class="bottom-bar">
+      <section class="panel-frame">
+        <div class="panel-title"><span>Resources</span></div>
+        <div class="resources-buttons">
+          <a class="btn" href="https://dekunukem.github.io/duckyPad-Pro/doc/getting_started.html" target="_blank" rel="noopener">User Manual</a>
+          <a class="btn" href="https://github.com/duckyPad/duckyPad-profile-autoswitcher/blob/master/README.md" target="_blank" rel="noopener">Profile Autoswitcher</a>
+          <a class="btn" href="https://discord.gg/4sJCBx5" target="_blank" rel="noopener">Discord Chatroom</a>
+          <a class="btn" href="https://dekunukem.github.io/duckyPad-Pro/doc/troubleshooting.html" target="_blank" rel="noopener">Troubleshooting</a>
+          <a class="btn" href="https://dekunukem.github.io/duckyPad-Pro/doc/store_links.html" target="_blank" rel="noopener">Accessories &amp; Upgrades</a>
+        </div>
+      </section>
+
+      <section class="panel-frame">
+        <div class="panel-title"><span>Updates</span></div>
+        <div class="updates-list">
+          <div id="appUpdateBadge" class="update-badge">Web App (v4.0.2): Checking...</div>
+          <div id="fwUpdateBadge" class="update-badge">Firmware: Not connected via USB HID</div>
+        </div>
+      </section>
+    </footer>
+  </div>
+
+  <!-- Hidden File Inputs for Folder & ZIP Selection -->
+  <input type="file" id="hiddenDirInput" webkitdirectory directory multiple class="hidden" />
+  <input type="file" id="hiddenZipInput" accept=".zip" class="hidden" />
+  <input type="file" id="hiddenProfileZipInput" accept=".zip" class="hidden" />
+
+  <!-- Connect / Open Modal -->
+  <div id="modalConnect" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span>Connect to duckyPad or Load Configuration</span>
+        <button id="btnCloseConnectModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="connect-options-grid">
+          <div class="connect-option-card">
+            <h4>1. Local SD Card / Folder</h4>
+            <p>Select a mounted duckyPad USB drive, SD card directory, or local backup folder directly from your computer.</p>
+            <button id="btnModalOpenFolder" class="btn-primary">Select Folder...</button>
+          </div>
+
+          <div class="connect-option-card">
+            <h4>2. USB Direct (WebHID)</h4>
+            <p>Connect directly over USB HID to sync RTC clock, dump/write OG duckyPad SD card, or mount duckyPad Pro USB storage.</p>
+            <button id="btnModalWebHid">Connect via WebHID</button>
+          </div>
+
+          <div class="connect-option-card">
+            <h4>3. Load Backup .zip</h4>
+            <p>Open a previously exported duckyPad backup <code>.zip</code> archive to edit and re-export.</p>
+            <button id="btnModalLoadZip">Load .zip Archive...</button>
+          </div>
+
+          <div class="connect-option-card">
+            <h4>4. Try Sample Profiles</h4>
+            <p>Explore the configurator and test DuckyScript 3 compilation right away using built-in sample profiles.</p>
+            <button id="btnModalLoadDemo">Load Sample Profiles</button>
+          </div>
+        </div>
+
+        <div id="webHidDevicePickerBox" class="hidden" style="margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border-color);">
+          <div style="font-weight: 600; margin-bottom: 6px;">Multiple duckyPads detected! Click one to connect:</div>
+          <div id="webHidDeviceList" style="display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Headers Modal (User Header + Standard Library) -->
+  <div id="modalHeaders" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 720px; height: 82vh;">
+      <div class="modal-header">
+        <span>Edit Headers (USE_UH &amp; USE_STDLIB)</span>
+        <button id="btnCloseHeadersModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="panel-frame" style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
+          <div class="panel-title">
+            <span>User Header (user_header.txt)</span>
+            <span style="text-transform: none; font-weight: 500;">To include this header, add <code>USE_UH</code> to your script.</span>
+          </div>
+
+          <div class="code-editor-container" style="min-height: 220px;">
+            <div id="headerLineGutter" class="line-numbers-gutter">
+              <div class="gutter-line">1</div>
+            </div>
+            <div class="editor-stack">
+              <div id="headerBackdrop" class="editor-backdrop"></div>
+              <textarea
+                id="headerTextarea"
+                class="script-textarea"
+                spellcheck="false"
+                placeholder="// Define global DEFINE macros or FUN helper functions here..."
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="syntax-status-bar">
+            <span id="headerSyntaxStatus" class="syntax-ok">Code seems OK...</span>
+          </div>
+        </div>
+
+        <div class="panel-frame" style="display: flex; flex-direction: column; gap: 8px;">
+          <div class="panel-title">
+            <span>duckyPad Standard Library</span>
+            <span style="text-transform: none; font-weight: 500;">To include, add <code>USE_STDLIB</code> to your script.</span>
+          </div>
+          <p class="hint-text">
+            duckyPad STDLIB contains handy helper functions (<code>WAITKEY</code>, <code>MEMSET</code>, <code>ABS</code>, <code>MIN</code>, <code>MAX</code>, etc.).
+          </p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="btnStdlibDocs" style="flex: 1;">StdLib Docs ↗</button>
+            <button id="btnStdlibFetch" style="flex: 1;">Fetch Latest from GitHub</button>
+            <button id="btnToggleStdlibView" style="flex: 1;">View / Hide StdLib Source</button>
+          </div>
+          <pre id="stdlibPreviewBox" class="hidden" style="max-height: 150px; overflow: auto; background: var(--bg-input); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 11.5px;"></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnSaveCloseHeaders" class="btn-primary" style="width: 100%;">Save &amp; Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Profiles Modal -->
+  <div id="modalExportProfiles" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 400px;">
+      <div class="modal-header">
+        <span>Select Profile(s) to Export</span>
+        <button id="btnCloseExportModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="hint-text">Each selected profile will be compiled and exported as <code>duckyPad_Profile_&lt;name&gt;.zip</code>.</span>
+          <button id="btnSelectAllProfiles" style="font-size: 11px; padding: 3px 7px;">Toggle All</button>
+        </div>
+        <div id="exportProfilesChecklist" class="profile-listbox" style="max-height: 280px; display: flex; flex-direction: column;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnConfirmExportProfiles" class="btn-primary" style="width: 100%;">Export Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backups Manager Modal -->
+  <div id="modalBackups" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 620px;">
+      <div class="modal-header">
+        <span>Browser Backups</span>
+        <button id="btnCloseBackupsModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint-text">
+          All automatic backups created when saving are stored locally in your browser. You can restore any backup into the editor or download it as a <code>.zip</code> to copy back to your SD card.
+        </p>
+        <div id="backupsListContainer" style="display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bytecode / Assembly Inspector Modal -->
+  <div id="modalBytecode" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 700px;">
+      <div class="modal-header">
+        <span>DSVM2 Bytecode &amp; Assembly Inspector</span>
+        <button id="btnCloseBytecodeModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div>
+          <div style="font-weight: 600; margin-bottom: 4px;">Resolved DSVM2 Assembly Listing:</div>
+          <pre id="bytecodeAsmPre" style="max-height: 240px; overflow: auto; background: var(--bg-input); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 12px;"></pre>
+        </div>
+        <div>
+          <div style="font-weight: 600; margin-bottom: 4px;">Compiled .dsb Binary Output (Hex):</div>
+          <pre id="bytecodeHexPre" style="max-height: 140px; overflow: auto; background: var(--bg-input); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 12px; white-space: pre-wrap; word-break: break-all;"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generic Input / Yes-No Prompt Modal -->
+  <div id="modalPrompt" class="modal-backdrop hidden" style="z-index: 1500;">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <span id="promptTitle">Input</span>
+      </div>
+      <div class="modal-body">
+        <p id="promptMessage" style="white-space: pre-line;"></p>
+        <input
+          type="text"
+          id="promptInput"
+          style="width: 100%; padding: 7px 10px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 4px; font-size: 13px;"
+        />
+      </div>
+      <div id="promptButtonsNormal" class="modal-footer">
+        <button id="btnPromptCancel">Cancel</button>
+        <button id="btnPromptOk" class="btn-primary">OK</button>
+      </div>
+      <div id="promptButtonsYesNo" class="modal-footer hidden">
+        <button id="btnPromptYes" class="btn-primary">Yes</button>
+        <button id="btnPromptNo">No</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Scripts (loaded in order so file:// works without a web server!) -->
+  <script src="js/dsvm.js"></script>
+  <script src="js/zip_md5.js"></script>
+  <script src="js/duck_objs.js"></script>
+  <script src="js/hid_fs.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
