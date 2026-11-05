@@ -194,10 +194,15 @@ button:disabled {
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
-  max-width: 340px;
+  max-width: 440px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-pill.status-success {
+  color: var(--accent-green);
+  border-color: var(--accent-green);
 }
 
 .model-select {
@@ -324,8 +329,14 @@ button:disabled {
   user-select: none;
 }
 
+.color-picker-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .color-swatch-input {
-  width: 58px;
+  width: 46px;
   height: 22px;
   padding: 0;
   border: 1px solid var(--border-color);
@@ -337,6 +348,52 @@ button:disabled {
 .color-swatch-input:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.btn-icon-sm {
+  padding: 2px 5px;
+  height: 22px;
+  font-size: 10.5px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.fav-colors-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.fav-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fav-swatches-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.fav-swatch-btn {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.1s, border-color 0.1s;
+}
+
+.fav-swatch-btn:hover:not(:disabled) {
+  transform: scale(1.18);
+  border-color: #ffffff;
 }
 
 /* Center Column: Onboard Switches + Key Config */
@@ -383,12 +440,12 @@ button:disabled {
 
 .obsw-grid.portrait {
   grid-template-columns: repeat(4, minmax(52px, 1fr));
-  grid-template-rows: repeat(5, minmax(34px, 56px));
+  grid-template-rows: repeat(5, minmax(30px, 54px));
 }
 
 .obsw-grid.landscape {
   grid-template-columns: repeat(5, minmax(44px, 1fr));
-  grid-template-rows: repeat(4, minmax(38px, 60px));
+  grid-template-rows: repeat(4, minmax(34px, 58px));
   gap: 6px;
 }
 
@@ -429,6 +486,30 @@ button:disabled {
   background: #ffffff !important;
   color: #000000 !important;
   border: 2px dashed var(--accent-primary) !important;
+}
+
+.dp-key-btn.drag-over-clone {
+  background: #dcfce7 !important;
+  color: #064e3b !important;
+  border: 2px dashed var(--accent-green) !important;
+}
+
+.clone-mode-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #000000;
+  background: var(--accent-green);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.btn-clone-active {
+  background-color: var(--accent-green) !important;
+  border-color: var(--accent-green) !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
 }
 
 .dp-key-btn.dp20-disabled {

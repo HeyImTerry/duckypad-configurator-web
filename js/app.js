@@ -39,6 +39,16 @@
     lastSyntaxListingStr: null,
     lastCompiledResult: null,
     dragSourceKeyIndex: null,
+    dragIsClone: false,
+    cloneSourceKeyIndex: null,
+
+    lastConnection: null,
+    statusMessageOverride: null,
+    isStatusSuccess: false,
+    favoriteColors: [
+      '#5416b4', '#2563eb', '#10b981', '#f59e0b',
+      '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4',
+    ],
   };
 
   // ---------------- DOM ELEMENTS ----------------
@@ -46,18 +56,20 @@
 
   function cacheElements() {
     const ids = [
-      'btnConnect', 'statusLabel', 'modelSelect', 'btnSave', 'btnExportSdZip',
+      'btnConnect', 'btnQuickConnect', 'statusLabel', 'modelSelect', 'btnSave', 'btnExportSdZip',
       'btnBackups', 'btnEditHeaders', 'btnThemeToggle',
       // Profiles
       'profileListbox', 'btnProfileUp', 'btnProfileRemove', 'btnProfileDown',
       'btnProfileNew', 'btnProfileDupe', 'btnProfileRename', 'btnProfileImport', 'btnProfileExport',
-      'inputBgColor', 'chkKdColor', 'inputKdColor', 'chkDimUnused',
+      'inputBgColor', 'btnAddFavBgColor', 'chkKdColor', 'inputKdColor', 'btnAddFavKdColor',
+      'profileFavColorsList', 'chkDimUnused',
       'chkUpperHs', 'chkLowerHs',
       // Onboard Switches
       'chkRotateKeys', 'obswGrid',
       // Key Config
-      'keyLimitLabel', 'keyNameTextarea', 'btnKeyRemove',
-      'chkCustomKeyColor', 'inputKeyColor', 'chkAllowAbort', 'chkDontRepeat',
+      'cloneModeHint', 'keyLimitLabel', 'keyNameTextarea', 'btnKeyClone', 'btnKeyRemove',
+      'chkCustomKeyColor', 'inputKeyColor', 'btnAddFavKeyColor', 'keyFavColorsList',
+      'chkAllowAbort', 'chkDontRepeat', 'favColorsDatalist',
       // Rotary Encoders & Expansion
       'reActiveContainer', 'reTeaseContainer', 'reListContainer',
       'btnExpMinus', 'btnExpPlus', 'expModuleLabel', 'expListContainer',
@@ -214,8 +226,198 @@
     return `${c1}\n${c2}`;
   }
 
+  function clearStatusOverride() {
+    if (state.statusMessageOverride !== null || state.isStatusSuccess) {
+      state.statusMessageOverride = null;
+      state.isStatusSuccess = false;
+      if (el.statusLabel) {
+        el.statusLabel.textContent = state.connectionLabel;
+        el.statusLabel.title = state.connectionLabel;
+        el.statusLabel.classList.remove('status-success');
+      }
+    }
+  }
+
+  function setStatusSuccessMessage(msg) {
+    state.statusMessageOverride = msg;
+    state.isStatusSuccess = true;
+    if (el.statusLabel) {
+      el.statusLabel.textContent = msg;
+      el.statusLabel.title = msg;
+      el.statusLabel.classList.add('status-success');
+    }
+  }
+
+  // ---------------- FAVORITE COLORS MANAGEMENT ----------------
+  const LS_FAV_COLORS_KEY = 'dp_favorite_colors_v1';
+
+  function loadFavoriteColors() {
+    try {
+      const raw = localStorage.getItem(LS_FAV_COLORS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          state.favoriteColors = parsed.filter(c => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c)).map(c => c.toLowerCase());
+        }
+      }
+    } catch (_) {}
+  }
+
+  function saveFavoriteColors() {
+    try {
+      localStorage.setItem(LS_FAV_COLORS_KEY, JSON.stringify(state.favoriteColors));
+    } catch (_) {}
+    HidFS.BackupStore.setKv('favorite_colors', state.favoriteColors);
+  }
+
+  function addFavoriteColor(hexStr) {
+    if (!hexStr) return;
+    const norm = String(hexStr).trim().toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(norm)) return;
+    state.favoriteColors = [norm, ...state.favoriteColors.filter(c => c !== norm)].slice(0, 14);
+    saveFavoriteColors();
+    renderFavoriteColors();
+    showToast(`Saved ${norm.toUpperCase()} to Favorite Colors!`, 'success', 2200);
+  }
+
+  function removeFavoriteColor(hexStr) {
+    const norm = String(hexStr).trim().toLowerCase();
+    state.favoriteColors = state.favoriteColors.filter(c => c !== norm);
+    saveFavoriteColors();
+    renderFavoriteColors();
+  }
+
+  function renderFavoriteColors() {
+    if (!el.favColorsDatalist || !el.profileFavColorsList || !el.keyFavColorsList) return;
+    el.favColorsDatalist.innerHTML = '';
+    el.profileFavColorsList.innerHTML = '';
+    el.keyFavColorsList.innerHTML = '';
+
+    const pf = getCurrentProfile();
+    const keyObj = getCurrentKey();
+
+    for (const hex of state.favoriteColors) {
+      const opt = document.createElement('option');
+      opt.value = hex;
+      el.favColorsDatalist.appendChild(opt);
+
+      // Profile favorite swatch
+      const pfBtn = document.createElement('button');
+      pfBtn.type = 'button';
+      pfBtn.className = 'fav-swatch-btn';
+      pfBtn.style.backgroundColor = hex;
+      pfBtn.disabled = !pf;
+      pfBtn.title = `${hex.toUpperCase()} — Click: set Background Color • Shift+Click: set Key-down Color • Right-click/Alt+Click: remove`;
+      pfBtn.addEventListener('click', e => {
+        if (e.altKey) {
+          e.preventDefault();
+          removeFavoriteColor(hex);
+          return;
+        }
+        const curPf = getCurrentProfile();
+        if (!curPf) return;
+        const rgb = DuckObjs.hex_to_rgb(hex);
+        state.lastRgb = rgb;
+        if (e.shiftKey) {
+          curPf.kd_color = rgb;
+        } else {
+          curPf.bg_color = rgb;
+        }
+        curPf.is_dirty = true;
+        curPf.is_config_dirty = true;
+        clearStatusOverride();
+        renderAll();
+      });
+      pfBtn.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        removeFavoriteColor(hex);
+      });
+      el.profileFavColorsList.appendChild(pfBtn);
+
+      // Key favorite swatch
+      const keyBtn = document.createElement('button');
+      keyBtn.type = 'button';
+      keyBtn.className = 'fav-swatch-btn';
+      keyBtn.style.backgroundColor = hex;
+      keyBtn.disabled = !keyObj;
+      keyBtn.title = `${hex.toUpperCase()} — Click: apply to Key • Right-click/Alt+Click: remove`;
+      keyBtn.addEventListener('click', e => {
+        if (e.altKey) {
+          e.preventDefault();
+          removeFavoriteColor(hex);
+          return;
+        }
+        const curPf = getCurrentProfile();
+        const curKey = getCurrentKey();
+        if (!curKey) return;
+        const rgb = DuckObjs.hex_to_rgb(hex);
+        state.lastRgb = rgb;
+        curKey.color = rgb;
+        curKey.is_dirty = true;
+        if (curPf) {
+          curPf.is_dirty = true;
+          curPf.is_config_dirty = true;
+        }
+        clearStatusOverride();
+        renderKeyButtons();
+        renderKeyConfigAndScriptPanel(false);
+      });
+      keyBtn.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        removeFavoriteColor(hex);
+      });
+      el.keyFavColorsList.appendChild(keyBtn);
+    }
+  }
+
+  // ---------------- KEY CLONING & DRAG/DROP ----------------
+  function cloneKeyOnCurrentProfile(srcIdx, dstIdx) {
+    const pf = getCurrentProfile();
+    if (!pf || srcIdx === null || dstIdx === null || srcIdx === dstIdx) return false;
+    const srcKey = pf.keylist[srcIdx];
+    if (!srcKey) return false;
+    if (state.deviceType === DuckObjs.DP_MODEL_OG_DUCKYPAD && DP20_UNUSED_INDICES.has(dstIdx)) {
+      return false;
+    }
+
+    const cloned = srcKey.clone();
+    cloned.index = dstIdx;
+    cloned.is_dirty = true;
+    cloned.is_script_dirty = true;
+    cloned.orig_disk_index = null;
+    cloned.orig_key_txt_bytes = null;
+    cloned.orig_key_rel_txt_bytes = null;
+    cloned.orig_dsb_bytes = null;
+    cloned.orig_dsb_rel_bytes = null;
+
+    pf.keylist[dstIdx] = cloned;
+    pf.is_dirty = true;
+    pf.is_config_dirty = true;
+    state.cloneSourceKeyIndex = null;
+    clearStatusOverride();
+    updateKeylistIndices(pf);
+    selectKeyIndex(dstIdx);
+    renderAll();
+    showToast(`Cloned key "${cloned.name || 'Key'}" to slot ${dstIdx + 1}`, 'success', 2400);
+    return true;
+  }
+
   function attachKeyDragAndClickEvents(btn, keyIndex) {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', e => {
+      const pf = getCurrentProfile();
+      if (!pf) return;
+
+      // Support cloning via active "Clone Key" mode or via Shift+Click from currently selected key
+      if (state.cloneSourceKeyIndex !== null && state.cloneSourceKeyIndex !== keyIndex) {
+        cloneKeyOnCurrentProfile(state.cloneSourceKeyIndex, keyIndex);
+        return;
+      }
+      if (e.shiftKey && state.selectedKeyIndex !== null && state.selectedKeyIndex !== keyIndex && pf.keylist[state.selectedKeyIndex]) {
+        cloneKeyOnCurrentProfile(state.selectedKeyIndex, keyIndex);
+        return;
+      }
+
+      state.cloneSourceKeyIndex = null;
       selectKeyIndex(keyIndex);
     });
 
@@ -226,37 +428,49 @@
         return;
       }
       state.dragSourceKeyIndex = keyIndex;
-      e.dataTransfer.effectAllowed = 'move';
+      state.dragIsClone = Boolean(e.shiftKey || e.ctrlKey || e.altKey || state.cloneSourceKeyIndex !== null);
+      e.dataTransfer.effectAllowed = 'copyMove';
       e.dataTransfer.setData('text/plain', String(keyIndex));
     });
 
     btn.addEventListener('dragover', e => {
       if (state.dragSourceKeyIndex === null || state.dragSourceKeyIndex === keyIndex) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      if (!btn.classList.contains('drag-over')) {
-        btn.classList.add('drag-over');
-        btn.dataset.savedText = btn.textContent;
+      const isClone = Boolean(state.dragIsClone || e.shiftKey || e.ctrlKey || e.altKey || state.cloneSourceKeyIndex !== null);
+      e.dataTransfer.dropEffect = isClone ? 'copy' : 'move';
+      const targetClass = isClone ? 'drag-over-clone' : 'drag-over';
+      const otherClass = isClone ? 'drag-over' : 'drag-over-clone';
+      btn.classList.remove(otherClass);
+      if (!btn.classList.contains(targetClass)) {
+        btn.classList.add(targetClass);
         const isAux = DuckObjs.is_rotary_encoder_button(keyIndex) || DuckObjs.is_expansion_button(keyIndex);
-        btn.textContent = isAux ? 'move' : 'move\nhere';
+        btn.textContent = isClone ? (isAux ? 'clone' : 'clone\nhere') : (isAux ? 'move' : 'move\nhere');
       }
     });
 
     btn.addEventListener('dragleave', () => {
-      if (btn.classList.contains('drag-over')) {
-        btn.classList.remove('drag-over');
+      if (btn.classList.contains('drag-over') || btn.classList.contains('drag-over-clone')) {
+        btn.classList.remove('drag-over', 'drag-over-clone');
         renderKeyButtons();
       }
     });
 
     btn.addEventListener('drop', e => {
       e.preventDefault();
-      btn.classList.remove('drag-over');
+      const wasCloneOver = btn.classList.contains('drag-over-clone');
+      btn.classList.remove('drag-over', 'drag-over-clone');
       const srcIdx = state.dragSourceKeyIndex;
+      const isClone = Boolean(wasCloneOver || state.dragIsClone || e.shiftKey || e.ctrlKey || e.altKey || state.cloneSourceKeyIndex !== null);
       state.dragSourceKeyIndex = null;
+      state.dragIsClone = false;
       if (srcIdx === null || srcIdx === keyIndex) return;
       const pf = getCurrentProfile();
       if (!pf) return;
+
+      if (isClone) {
+        cloneKeyOnCurrentProfile(srcIdx, keyIndex);
+        return;
+      }
 
       // Swap srcIdx and keyIndex matching button_drag_release in duckypad_config.py
       const temp = pf.keylist[keyIndex];
@@ -266,6 +480,7 @@
       pf.is_config_dirty = true;
       if (pf.keylist[keyIndex]) pf.keylist[keyIndex].is_dirty = true;
       if (pf.keylist[srcIdx]) pf.keylist[srcIdx].is_dirty = true;
+      clearStatusOverride();
       updateKeylistIndices(pf);
       selectKeyIndex(keyIndex);
       renderAll();
@@ -273,6 +488,7 @@
 
     btn.addEventListener('dragend', () => {
       state.dragSourceKeyIndex = null;
+      state.dragIsClone = false;
       renderKeyButtons();
     });
   }
@@ -343,8 +559,31 @@
     const pf = getCurrentProfile();
 
     // Dashboard controls
-    el.statusLabel.textContent = state.connectionLabel;
-    el.statusLabel.title = state.connectionLabel;
+    const displayedStatus = state.statusMessageOverride || state.connectionLabel;
+    el.statusLabel.textContent = displayedStatus;
+    el.statusLabel.title = displayedStatus;
+    el.statusLabel.classList.toggle('status-success', Boolean(state.isStatusSuccess));
+
+    // Quick Connect / Disconnect button state
+    if (el.btnQuickConnect) {
+      if (state.connectionType !== 'none' && hasProfiles) {
+        el.btnQuickConnect.disabled = false;
+        el.btnQuickConnect.textContent = 'Disconnect';
+        el.btnQuickConnect.className = 'btn-danger';
+        el.btnQuickConnect.title = `Disconnect "${state.connectionLabel}" from GUI with a single click`;
+      } else if (state.lastConnection) {
+        el.btnQuickConnect.disabled = false;
+        el.btnQuickConnect.textContent = 'Quick Connect';
+        el.btnQuickConnect.className = 'btn-primary';
+        el.btnQuickConnect.title = `Reconnect to "${state.lastConnection.connectionLabel}" with a single click`;
+      } else {
+        el.btnQuickConnect.disabled = true;
+        el.btnQuickConnect.textContent = 'Quick Connect';
+        el.btnQuickConnect.className = '';
+        el.btnQuickConnect.title = 'Mount or connect a duckyPad first to enable single-click Quick Connect / Disconnect';
+      }
+    }
+
     el.modelSelect.value = String(state.deviceType);
     el.btnSave.disabled = !hasProfiles;
     el.btnExportSdZip.disabled = !hasProfiles;
@@ -389,6 +628,7 @@
         if (state.selectedProfileIndex !== idx) {
           state.selectedProfileIndex = idx;
           state.selectedKeyIndex = null;
+          state.cloneSourceKeyIndex = null;
           state.currentExpansionModule = 0;
           renderAll();
         }
@@ -398,8 +638,10 @@
 
     // Profile settings
     el.inputBgColor.disabled = !pf;
+    if (el.btnAddFavBgColor) el.btnAddFavBgColor.disabled = !pf;
     el.chkKdColor.disabled = !pf;
     el.inputKdColor.disabled = !pf || !pf.kd_color;
+    if (el.btnAddFavKdColor) el.btnAddFavKdColor.disabled = !pf || !pf.kd_color;
     el.chkDimUnused.disabled = !pf;
     el.chkUpperHs.disabled = !pf;
     el.chkLowerHs.disabled = !pf;
@@ -433,6 +675,7 @@
     renderKeyButtons();
     renderExpansionPanel();
     renderKeyConfigAndScriptPanel();
+    renderFavoriteColors();
   }
 
   function renderKeyButtons() {
@@ -526,11 +769,22 @@
     const keyObj = getCurrentKey();
 
     el.keyNameTextarea.disabled = !hasSelectedSlot;
+    if (el.btnKeyClone) {
+      el.btnKeyClone.disabled = !keyObj;
+      const isCloneActive = Boolean(keyObj && state.cloneSourceKeyIndex === state.selectedKeyIndex);
+      el.btnKeyClone.classList.toggle('btn-clone-active', isCloneActive);
+      el.btnKeyClone.innerHTML = isCloneActive ? 'Cancel<br/>Clone' : 'Clone<br/>Key';
+      if (el.cloneModeHint) {
+        el.cloneModeHint.classList.toggle('hidden', !isCloneActive);
+      }
+    }
     el.btnKeyRemove.disabled = !keyObj;
     el.chkCustomKeyColor.disabled = !keyObj;
     el.inputKeyColor.disabled = !keyObj || !keyObj.color;
+    if (el.btnAddFavKeyColor) el.btnAddFavKeyColor.disabled = !keyObj;
     el.chkAllowAbort.disabled = !keyObj;
     el.chkDontRepeat.disabled = !keyObj;
+    renderFavoriteColors();
 
     if (!hasSelectedSlot) {
       el.keyNameTextarea.value = '';
@@ -857,6 +1111,163 @@
   }
 
   // ---------------- CONNECT / LOAD WORKFLOWS ----------------
+  function saveLastConnectionSnapshot() {
+    if (state.connectionType === 'none') return;
+    state.lastConnection = {
+      connectionType: state.connectionType,
+      connectionLabel: state.connectionLabel,
+      dirHandle: state.dirHandle,
+      hidInfo: state.hidInfo,
+      deviceType: state.deviceType,
+      filesMap: new Map(state.originalFilesMap),
+      savedProfiles: state.profileList.map(p => p.clone()),
+      savedUserHeaderLines: [...state.userHeaderLines],
+    };
+    if (state.dirHandle) {
+      HidFS.BackupStore.setKv('last_dir_handle', state.dirHandle);
+      HidFS.BackupStore.setKv('last_dir_meta', {
+        connectionLabel: state.connectionLabel,
+        deviceType: state.deviceType,
+      });
+    }
+  }
+
+  async function handleQuickConnectToggle() {
+    // 1. If currently connected: Disconnect with a single click
+    if (state.connectionType !== 'none' && state.profileList.length > 0) {
+      saveLastConnectionSnapshot();
+      const prevLabel = state.connectionLabel;
+
+      // If connected to a physical duckyPad (or duckyPad Pro mounted via WebHID), exit USB disk/config mode
+      if (state.connectionType === 'webhid_dp20' || state.connectionType === 'folder_handle') {
+        try {
+          if (state.hidInfo && state.hidInfo.device) {
+            await HidFS.swResetHid(state.hidInfo.device, false);
+          } else {
+            const permitted = await HidFS.scanPermittedDuckypads();
+            if (permitted.length === 1) {
+              await HidFS.swResetHid(permitted[0].device, false);
+            }
+          }
+        } catch (_) {}
+      }
+
+      state.profileList = [];
+      state.selectedProfileIndex = -1;
+      state.selectedKeyIndex = null;
+      state.cloneSourceKeyIndex = null;
+      state.connectionType = 'none';
+      state.connectionLabel = `Disconnected (${prevLabel})`;
+      state.statusMessageOverride = null;
+      state.isStatusSuccess = false;
+      renderAll();
+      showToast(`Disconnected from "${prevLabel}". Click "Quick Connect" to reconnect anytime.`, 'info', 3500);
+      return;
+    }
+
+    // 2. If currently disconnected: Redo the last connection action with a single click
+    const last = state.lastConnection;
+    if (!last) return;
+
+    try {
+      el.statusLabel.textContent = `Reconnecting to ${last.connectionLabel}...`;
+      el.statusLabel.classList.remove('status-success');
+
+      if (last.connectionType === 'folder_handle' && last.dirHandle) {
+        // Check if a permitted duckyPad Pro is in normal HID mode and needs to be mounted into USB MSC mode first
+        try {
+          const permitted = await HidFS.scanPermittedDuckypads();
+          const dpp = permitted.find(d => d.dp_model === DuckObjs.DP_MODEL_DUCKYPAD_PRO);
+          if (dpp) {
+            state.hidInfo = dpp;
+            el.statusLabel.textContent = `Mounting duckyPad Pro (${dpp.diskLabel})...`;
+            await HidFS.swResetHid(dpp.device, true);
+            await new Promise(r => setTimeout(r, 1200));
+          }
+        } catch (_) {}
+
+        if (typeof last.dirHandle.queryPermission === 'function') {
+          let perm = await last.dirHandle.queryPermission({ mode: 'readwrite' });
+          if (perm !== 'granted' && typeof last.dirHandle.requestPermission === 'function') {
+            perm = await last.dirHandle.requestPermission({ mode: 'readwrite' });
+          }
+        }
+
+        let filesMap = null;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            filesMap = await HidFS.readDirectoryHandle(last.dirHandle);
+            if (filesMap && filesMap.size > 0) break;
+          } catch (readErr) {
+            if (attempt === 3) throw readErr;
+          }
+          await new Promise(r => setTimeout(r, 700));
+        }
+
+        if (filesMap && filesMap.size > 0) {
+          state.dirHandle = last.dirHandle;
+          await loadFromVirtualFilesMap(
+            filesMap,
+            last.connectionLabel,
+            'folder_handle',
+            last.deviceType === DuckObjs.DP_MODEL_DUCKYPAD_PRO
+          );
+          return;
+        }
+        // If OS remounted at a fresh handle, open the folder picker directly
+        await handleOpenFolder(last.deviceType === DuckObjs.DP_MODEL_DUCKYPAD_PRO);
+        return;
+      }
+
+      if (last.connectionType === 'webhid_dp20') {
+        const permitted = await HidFS.scanPermittedDuckypads();
+        const target = permitted.find(d => last.hidInfo && d.serial === last.hidInfo.serial) || permitted[0];
+        if (target) {
+          await connectSelectedHidDevice(target);
+          return;
+        }
+        await handleConnectWebHid();
+        return;
+      }
+
+      if (last.connectionType === 'demo') {
+        state.profileList = last.savedProfiles && last.savedProfiles.length > 0
+          ? last.savedProfiles.map(p => p.clone())
+          : DuckObjs.createSampleProfiles();
+        state.userHeaderLines = last.savedUserHeaderLines ? [...last.savedUserHeaderLines] : [];
+        state.selectedProfileIndex = state.profileList.length > 0 ? 0 : -1;
+        state.selectedKeyIndex = state.profileList.length > 0 ? 0 : null;
+        state.connectionType = 'demo';
+        state.connectionLabel = last.connectionLabel;
+        state.originalFilesMap = new Map(last.filesMap || []);
+        state.statusMessageOverride = null;
+        state.isStatusSuccess = false;
+        saveLastConnectionSnapshot();
+        renderAll();
+        renderKeyConfigAndScriptPanel(true);
+        showToast(`Reconnected to ${last.connectionLabel}`, 'success', 2500);
+        return;
+      }
+
+      if (last.filesMap && last.filesMap.size > 0) {
+        await loadFromVirtualFilesMap(
+          new Map(last.filesMap),
+          last.connectionLabel,
+          last.connectionType,
+          last.deviceType === DuckObjs.DP_MODEL_DUCKYPAD_PRO
+        );
+        return;
+      }
+    } catch (err) {
+      showToast(`Quick Connect failed (${err.message || err}). Opening folder/device selector...`, 'warn', 4500);
+      if (last.connectionType === 'folder_handle') {
+        await handleOpenFolder(last.deviceType === DuckObjs.DP_MODEL_DUCKYPAD_PRO);
+      } else if (last.connectionType === 'webhid_dp20') {
+        await handleConnectWebHid();
+      }
+    }
+  }
+
   async function loadFromVirtualFilesMap(filesMap, sourceLabel, connType, knownIsDp24 = null) {
     const parsed = DuckObjs.parseVirtualFileSystem(filesMap);
     let isDirForDp24 = knownIsDp24;
@@ -903,10 +1314,14 @@
     state.userHeaderLines = parsed.userHeaderLines;
     state.selectedProfileIndex = state.profileList.length > 0 ? 0 : -1;
     state.selectedKeyIndex = null;
+    state.cloneSourceKeyIndex = null;
     state.currentExpansionModule = 0;
     state.connectionType = connType;
     state.connectionLabel = sourceLabel;
+    state.statusMessageOverride = null;
+    state.isStatusSuccess = false;
     state.originalFilesMap = parsed.normalizedBytesMap || filesMap;
+    saveLastConnectionSnapshot();
 
     el.modalConnect.classList.add('hidden');
     renderAll();
@@ -1013,6 +1428,7 @@
     state.isUserHeaderDirty = false;
     state.isProfileOrderDirty = false;
     state.deletedProfileFolders.clear();
+    saveLastConnectionSnapshot();
   }
 
   async function handleSaveClick() {
@@ -1039,6 +1455,7 @@
     const syncOptions = { deletedDirs: state.deletedProfileFolders };
 
     try {
+      el.statusLabel.classList.remove('status-success');
       if (state.connectionType === 'webhid_dp20' && state.hidInfo && state.hidInfo.device) {
         const count = await HidFS.syncFilesOverHid(
           state.hidInfo.device,
@@ -1049,10 +1466,10 @@
           },
           syncOptions
         );
-        await HidFS.swResetHid(state.hidInfo.device, false);
         markSaveCommitted(buildRes.filesMap);
-        el.statusLabel.textContent = `Saved (${count} file ops) to duckyPad & Rebooted!`;
-        showToast('Changes synced to duckyPad over WebHID and backup saved!', 'success');
+        setStatusSuccessMessage(`✓ Saving configuration was successful! (${count} file ops synced via HID)`);
+        showToast('Saving configuration was successful! Changes synced to duckyPad & backup saved.', 'success', 4500);
+        await HidFS.swResetHid(state.hidInfo.device, false);
       } else if (state.connectionType === 'folder_handle' && state.dirHandle) {
         const count = await HidFS.syncToDirectoryHandle(
           state.dirHandle,
@@ -1064,19 +1481,19 @@
           syncOptions
         );
         markSaveCommitted(buildRes.filesMap);
-        if (state.hidInfo && state.hidInfo.device) {
-          await HidFS.swResetHid(state.hidInfo.device, false);
-        }
-        el.statusLabel.textContent = `Saved (${count} file ops) to ${state.dirHandle.name}`;
-        showToast(`Saved (${count} changed file ops) to folder "${state.dirHandle.name}" & stored backup!`, 'success');
+        setStatusSuccessMessage(`✓ Saving configuration was successful! (${state.dirHandle.name})`);
+        showToast(`Saving configuration was successful! (${count} file ops written to "${state.dirHandle.name}")`, 'success', 4500);
       } else {
         // Browser / Firefox / ZIP mode: download complete SD card ZIP archive
         exportFullSdCardZip(buildRes.filesMap, `${backupName}.zip`);
         markSaveCommitted(buildRes.filesMap);
-        el.statusLabel.textContent = `Saved & Downloaded ${backupName}.zip`;
-        showToast('Saved browser backup and downloaded SD card ZIP!', 'success');
+        setStatusSuccessMessage(`✓ Saving configuration was successful! (Downloaded ${backupName}.zip)`);
+        showToast('Saving configuration was successful! Browser backup saved & SD card ZIP downloaded.', 'success', 4500);
       }
     } catch (e) {
+      state.statusMessageOverride = null;
+      state.isStatusSuccess = false;
+      el.statusLabel.textContent = `Save error: ${e.message || e}`;
       showToast(`Save error: ${e.message || e}`, 'error', 6000);
     }
   }
@@ -1389,6 +1806,9 @@
       el.webHidDevicePickerBox.classList.add('hidden');
       el.modalConnect.classList.remove('hidden');
     });
+    if (el.btnQuickConnect) {
+      el.btnQuickConnect.addEventListener('click', handleQuickConnectToggle);
+    }
     el.btnCloseConnectModal.addEventListener('click', () => el.modalConnect.classList.add('hidden'));
     el.btnModalWebHid.addEventListener('click', handleConnectWebHid);
     el.btnModalOpenFolder.addEventListener('click', () => handleOpenFolder());
@@ -1397,6 +1817,7 @@
       el.hiddenZipInput.click();
     });
     el.btnModalLoadDemo.addEventListener('click', () => {
+      clearStatusOverride();
       state.profileList = DuckObjs.createSampleProfiles();
       state.selectedProfileIndex = 0;
       state.selectedKeyIndex = 0;
@@ -1407,6 +1828,7 @@
       state.isUserHeaderDirty = false;
       state.isProfileOrderDirty = false;
       state.isDeviceTypeChanged = false;
+      saveLastConnectionSnapshot();
       el.modalConnect.classList.add('hidden');
       renderAll();
       renderKeyConfigAndScriptPanel(true);
@@ -1485,6 +1907,9 @@
       pf.is_config_dirty = true;
       renderAll();
     });
+    if (el.btnAddFavBgColor) {
+      el.btnAddFavBgColor.addEventListener('click', () => addFavoriteColor(el.inputBgColor.value));
+    }
 
     el.chkKdColor.addEventListener('change', () => {
       const pf = getCurrentProfile();
@@ -1505,6 +1930,9 @@
       pf.is_config_dirty = true;
       renderAll();
     });
+    if (el.btnAddFavKdColor) {
+      el.btnAddFavKdColor.addEventListener('click', () => addFavoriteColor(el.inputKdColor.value));
+    }
 
     el.chkDimUnused.addEventListener('change', () => {
       const pf = getCurrentProfile();
@@ -1544,11 +1972,13 @@
     el.btnExpMinus.addEventListener('click', () => {
       state.currentExpansionModule = (state.currentExpansionModule - 1 + DuckObjs.MAX_EXPANSION_MODULE_COUNT) % DuckObjs.MAX_EXPANSION_MODULE_COUNT;
       state.selectedKeyIndex = null;
+      state.cloneSourceKeyIndex = null;
       renderAll();
     });
     el.btnExpPlus.addEventListener('click', () => {
       state.currentExpansionModule = (state.currentExpansionModule + 1) % DuckObjs.MAX_EXPANSION_MODULE_COUNT;
       state.selectedKeyIndex = null;
+      state.cloneSourceKeyIndex = null;
       renderAll();
     });
 
@@ -1610,9 +2040,33 @@
       el.keyNameTextarea.select();
     });
 
+    if (el.btnKeyClone) {
+      el.btnKeyClone.addEventListener('click', () => {
+        const pf = getCurrentProfile();
+        if (!pf || state.selectedKeyIndex === null || !pf.keylist[state.selectedKeyIndex]) return;
+        if (state.cloneSourceKeyIndex === state.selectedKeyIndex) {
+          state.cloneSourceKeyIndex = null;
+        } else {
+          state.cloneSourceKeyIndex = state.selectedKeyIndex;
+          showToast(`Clone mode active for Key ${state.selectedKeyIndex + 1}: Click any target key on this profile (or Shift+Drag a key) to clone.`, 'info', 4000);
+        }
+        renderKeyConfigAndScriptPanel(false);
+      });
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && state.cloneSourceKeyIndex !== null) {
+        state.cloneSourceKeyIndex = null;
+        renderKeyConfigAndScriptPanel(false);
+      }
+    });
+
     el.btnKeyRemove.addEventListener('click', () => {
       const pf = getCurrentProfile();
       if (!pf || state.selectedKeyIndex === null) return;
+      if (state.cloneSourceKeyIndex === state.selectedKeyIndex) {
+        state.cloneSourceKeyIndex = null;
+      }
       pf.keylist[state.selectedKeyIndex] = null;
       pf.is_dirty = true;
       pf.is_config_dirty = true;
@@ -1649,6 +2103,9 @@
       el.chkCustomKeyColor.checked = true;
       renderKeyButtons();
     });
+    if (el.btnAddFavKeyColor) {
+      el.btnAddFavKeyColor.addEventListener('click', () => addFavoriteColor(el.inputKeyColor.value));
+    }
 
     el.chkAllowAbort.addEventListener('change', () => {
       const pf = getCurrentProfile();
@@ -1860,7 +2317,48 @@
       const unzipped = await ZipMD5.readZip(zipBytes.buffer);
       assert(unzipped.length === buildRes.filesMap.size, `ZIP Archive round-trip (${unzipped.length} entries)`);
 
-      // 5. Test long script scrolling and viewport maximization (no page overflow)
+      // 5. Test Key Cloning on same layer
+      const pf = getCurrentProfile();
+      const srcKey = pf.keylist[0];
+      assert(Boolean(srcKey), 'Source key 1 exists before clone');
+      cloneKeyOnCurrentProfile(0, 14);
+      const clonedKey = pf.keylist[14];
+      assert(
+        Boolean(clonedKey) &&
+        clonedKey !== srcKey &&
+        clonedKey.name === srcKey.name &&
+        clonedKey.script === srcKey.script &&
+        clonedKey.index === 14,
+        'Clone Key to Key 15 succeeded'
+      );
+
+      // 6. Test Favorite Colors store & apply
+      const prevFavCount = state.favoriteColors.length;
+      addFavoriteColor('#123456');
+      assert(state.favoriteColors[0] === '#123456', 'Added favorite color #123456');
+      removeFavoriteColor('#123456');
+      assert(state.favoriteColors.length === prevFavCount && !state.favoriteColors.includes('#123456'), 'Removed favorite color #123456');
+
+      // 7. Test Quick Disconnect & Reconnect toggle
+      saveLastConnectionSnapshot();
+      assert(state.lastConnection !== null && !el.btnQuickConnect.disabled, 'Quick Connect button enabled after mount');
+      await handleQuickConnectToggle(); // Disconnect
+      assert(state.connectionType === 'none' && state.profileList.length === 0, 'Quick Disconnect unmounted workspace');
+      await handleQuickConnectToggle(); // Reconnect
+      assert(state.connectionType === 'demo' && state.profileList.length > 0, 'Quick Reconnect restored workspace');
+
+      // 8. Test Save Status Success Message
+      setStatusSuccessMessage('✓ Saving configuration was successful!');
+      assert(
+        el.statusLabel.textContent.includes('Saving configuration was successful!') &&
+        el.statusLabel.classList.contains('status-success'),
+        'Save completion status message displayed clearly'
+      );
+
+      // 9. Test long script scrolling and viewport maximization (no page overflow)
+      state.selectedKeyIndex = 5;
+      renderAll();
+      renderKeyConfigAndScriptPanel(true);
       const longScriptLines = [
         'DEFAULTCHARDELAY 15',
         'DEFAULTDELAY 25',
@@ -1906,6 +2404,7 @@
   async function init() {
     initTheme();
     cacheElements();
+    loadFavoriteColors();
     buildInitialKeyDOM();
     bindEvents();
 
@@ -1915,6 +2414,7 @@
       state.selectedKeyIndex = 5;
       state.connectionType = 'demo';
       state.connectionLabel = 'Demo Workspace (Sample Profiles)';
+      saveLastConnectionSnapshot();
     }
 
     renderAll();
@@ -1925,6 +2425,26 @@
     if (window.location.hash === '#autotest') {
       await runAutomatedSelfTests();
     }
+
+    // Restore persisted favorite colors or previous directory handle from IndexedDB if available
+    try {
+      const idbFavs = await HidFS.BackupStore.getKv('favorite_colors', null);
+      if (Array.isArray(idbFavs) && idbFavs.length > 0 && state.favoriteColors.length === 0) {
+        state.favoriteColors = idbFavs.filter(c => typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c));
+        renderFavoriteColors();
+      }
+      const savedDirHandle = await HidFS.BackupStore.getKv('last_dir_handle', null);
+      const savedDirMeta = await HidFS.BackupStore.getKv('last_dir_meta', null);
+      if (savedDirHandle && !state.lastConnection) {
+        state.lastConnection = {
+          connectionType: 'folder_handle',
+          connectionLabel: (savedDirMeta && savedDirMeta.connectionLabel) || `Folder: ${savedDirHandle.name}`,
+          deviceType: (savedDirMeta && savedDirMeta.deviceType) || DuckObjs.DP_MODEL_DUCKYPAD_PRO,
+          dirHandle: savedDirHandle,
+        };
+        renderAll();
+      }
+    } catch (_) {}
 
     // Load cached stdlib if available, and check for daily update in background
     const cachedStdlib = await HidFS.BackupStore.getKv('stdlib_text', null);
