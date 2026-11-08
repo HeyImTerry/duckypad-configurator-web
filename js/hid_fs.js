@@ -94,24 +94,13 @@
     });
   }
 
-  async function hidSendOnly(device, buf64, timeoutMs = 1200) {
-    const sendPromise = (async () => {
-      if (!device.opened) {
-        await device.open();
-      }
-      const reportId = buf64[0];
-      const payload = buf64.subarray(1, PC_TO_DUCKYPAD_HID_BUF_SIZE);
-      await device.sendReport(reportId, payload);
-    })();
-    let timer = null;
-    const timeoutPromise = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('WebHID send timeout')), timeoutMs);
-    });
-    try {
-      await Promise.race([sendPromise, timeoutPromise]);
-    } finally {
-      if (timer) clearTimeout(timer);
+  async function hidSendOnly(device, buf64) {
+    if (!device.opened) {
+      await device.open();
     }
+    const reportId = buf64[0];
+    const payload = buf64.subarray(1, PC_TO_DUCKYPAD_HID_BUF_SIZE);
+    await device.sendReport(reportId, payload);
   }
 
   function parseDpInfoFromHidMsg(hidMsg, device) {
@@ -130,8 +119,17 @@
     };
   }
 
-  async function scanPermittedDuckypads() {
-    if (!navigator.hid) return [];
+  async function requestAndScanDuckypads() {
+    if (!navigator.hid) {
+      throw new Error('WebHID is not supported in this browser (use Chrome, Edge, or Brave on localhost/HTTPS, or use Folder / ZIP mode).');
+    }
+    // Request permission if needed
+    await navigator.hid.requestDevice({
+      filters: [
+        { vendorId: VENDOR_ID, productId: DP20_PID },
+        { vendorId: VENDOR_ID, productId: DPP_PID },
+      ],
+    });
     const devices = await navigator.hid.getDevices();
     const dpDevices = devices.filter(d => d.vendorId === VENDOR_ID && (d.productId === DP20_PID || d.productId === DPP_PID));
 
@@ -141,7 +139,7 @@
     for (const dev of dpDevices) {
       try {
         const req = getEmptyPcToDuckypadBuf();
-        const res = await hidTxRx(dev, req, 1200);
+        const res = await hidTxRx(dev, req, 1500);
         if (res[2] !== HID_RESPONSE_OK) continue;
         const info = parseDpInfoFromHidMsg(res, dev);
         if (!seenSerials.has(info.serial)) {
@@ -154,20 +152,6 @@
     }
     infoList.sort((a, b) => a.serial.localeCompare(b.serial));
     return infoList;
-  }
-
-  async function requestAndScanDuckypads() {
-    if (!navigator.hid) {
-      throw new Error('WebHID is not supported in this browser (use Chrome, Edge, or Brave on localhost/HTTPS, or use Folder / ZIP mode).');
-    }
-    // Request permission if needed
-    await navigator.hid.requestDevice({
-      filters: [
-        { vendorId: VENDOR_ID, productId: DP20_PID },
-        { vendorId: VENDOR_ID, productId: DPP_PID },
-      ],
-    });
-    return await scanPermittedDuckypads();
   }
 
   async function syncRtcHid(device) {
@@ -345,8 +329,7 @@
   async function syncFilesOverHid(device, oldFilesMap, newFilesMap, onProgress, options = {}) {
     const ops = DuckObjs.computeFileSyncOps(oldFilesMap, newFilesMap, options);
     for (const op of ops) {
-      const isSpsCleanup = op.action === 'rmf' && op.path.toLowerCase().endsWith('/state.sps');
-      if (onProgress && !isSpsCleanup) onProgress(`Saving via HID: ${op.path}`);
+      if (onProgress) onProgress(`Saving via HID: ${op.path}`);
       const hidPath = '/' + op.path.replace(/^[/\\]+/, '');
       if (hidPath.length > HID_READ_FILE_PATH_SIZE_MAX) {
         throw new Error(`HID file path too long: ${hidPath}`);
@@ -376,7 +359,6 @@
         await hidTxRx(device, buf);
       }
     }
-    if (onProgress) onProgress('Saving configuration was successful!');
     return ops.length;
   }
 
@@ -412,8 +394,7 @@
     const ops = DuckObjs.computeFileSyncOps(oldFilesMap, newFilesMap, options);
 
     for (const op of ops) {
-      const isSpsCleanup = op.action === 'rmf' && op.path.toLowerCase().endsWith('/state.sps');
-      if (onProgress && !isSpsCleanup) onProgress(`Writing: ${op.path}`);
+      if (onProgress) onProgress(`Writing: ${op.path}`);
       const parts = op.path.split('/');
       if (op.action === 'mkdir') {
         await dirHandle.getDirectoryHandle(op.path, { create: true });
@@ -448,7 +429,6 @@
       }
     }
 
-    if (onProgress) onProgress('Saving configuration was successful!');
     return ops.length;
   }
 
@@ -731,7 +711,6 @@
     VENDOR_ID,
     DP20_PID,
     DPP_PID,
-    scanPermittedDuckypads,
     requestAndScanDuckypads,
     syncRtcHid,
     swResetHid,
